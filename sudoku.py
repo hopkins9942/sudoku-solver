@@ -14,9 +14,23 @@ import numpy as np
 
 
 class Puzzle:
-    def __init__(self, board):
+    def __init__(self, board=None, preset='medium1'):
         """Could also add presets for testing"""
-        self.board = board
+        if board is not None:
+            self.board = board
+        elif preset=='medium1':
+            self.board = np.array([[0,0,0,0,0,0,4,0,0],
+                                   [0,0,9,0,2,4,0,1,0],
+                                   [0,0,0,3,0,0,0,0,0],
+                                   [6,0,2,4,0,0,0,0,0],
+                                   [5,4,0,2,6,0,7,0,0],
+                                   [1,0,3,0,5,9,0,0,0],
+                                   [0,0,0,0,0,0,0,0,3],
+                                   [3,0,1,0,0,0,6,0,5],
+                                   [0,0,0,0,0,7,0,9,0]])
+        else:
+            raise TypeError('Input board, choose preset, or use .enterByLine() method')
+            
         self.poss = self.initPoss()
         
     @classmethod
