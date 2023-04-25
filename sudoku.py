@@ -1,0 +1,73 @@
+"""
+Current thoughts:
+when solving, once full possibilities are put in, you only need to look at that
+so take solved cells out of poss, and track solved board seperately
+
+self.board tells what is solved (in 3d: val,row,col)
+a solved cell makes all cells which share a house with it zero,
+its value doesn't matter but I'll set to True for comfort
+self.poss tells what is possibile in unsolved houses
+"""
+
+import numpy as np
+
+
+
+class Puzzle:
+    def __init__(self, board):
+        """Could also add presets for testing"""
+        self.board = board
+        self.poss = self.initPoss()
+        
+    @classmethod
+    def enterByLine(cls):
+        board = np.zeros((9,9), dtype=int)
+        for i in range(9):
+            board[i,:] = [int(n) for n in input(f"Enter {('1st' if i==0 else ('2nd' if i==1 else ('3rd' if i==2 else f'{i+1}th')))} line: ")]
+        return cls(board)
+    
+    
+    def initPoss(self):
+        """
+        Calculate possibilities just based on solved cells,
+        only intended to initialise puzzle, 
+        as once initialised all solver methods just work with poss and remove 
+        cells from poss directly
+        """
+        poss = np.full((9,9,9), True)
+        for i in range(9):
+            for j in range(9):
+                if self.board[i,j] != 0:
+                    k = self.board[i,j]-1
+                    poss[:,i,j] = np.full(9, False)
+                    poss[k,:,j] = np.full(9, False)
+                    poss[k,i,:] = np.full(9, False)
+                    poss[k, (i//3)*3:(i//3)*3+3, (j//3)*3:(j//3)*3+3] = np.full((3,3), False)
+                    poss[k,i,j] = True
+        # This is copied from solveCell, solveCell not used because that 
+        # requires self.poss to already be defined
+        return poss
+    
+    def showPoss(self):
+        #Show column by column
+        pass
+    
+    def solveCell(self, k, i, j):
+        """
+        for removing possibilities due to shared house when cell ij=k+1
+        or, when cell ij is determined to be True
+        Order of indices is kij as k determines depth (first layer of nesting)
+        i is row (2nd layer) and j is column (3rd layer)
+        """
+        self.board[i,j]=k+1
+        
+        self.poss[:,i,j] = np.full(9, False)
+        self.poss[k,:,j] = np.full(9, False)
+        self.poss[k,i,:] = np.full(9, False)
+        self.poss[k, (i//3)*3:(i//3)*3+3, (j//3)*3:(j//3)*3+3] = np.full((3,3), False)
+        
+        self.poss[k,i,j] = True
+        
+        
+    
+    
