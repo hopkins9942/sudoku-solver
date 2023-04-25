@@ -81,6 +81,21 @@ class Puzzle:
         self.poss[k, (i//3)*3:(i//3)*3+3, (j//3)*3:(j//3)*3+3] = np.full((3,3), False)
         
         self.poss[k,i,j] = True
+        return 0
+    
+    #Calculation of houseMasks
+    # houseMasks = ([np.full((9,9,9),))]+[]+[]+[]
+        
+    def solve(self):
+        """Main method, solves puzzle.
+        Applies increasingly complex methods
+        Starts with singles: when one cell in a house is only possiblity,
+        it can be solved, removing other possiblitiies from any other house 
+        that cell is in. In usual parlance, this is both hidden (only poss in ij)
+        and naked (only poss in k) singles
+        """
+        
+        # Singles 
         
         
     
