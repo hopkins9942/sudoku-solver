@@ -36,6 +36,7 @@ houses, and row-col, all values in one i,j cell. Solver looks for inconsisties
 which allow Trues to be set to Falses where they cannot be in solution.
 
 
+
 """
 
 import numpy as np
@@ -78,7 +79,7 @@ class Puzzle:
         for j in range(9):
             houseMask.append(rowMask[i]&colMask[j])
         
-    assert len(houseMask)==324
+    assert len(houseMask)==4*81
     # houseMask contains all houses
     # (each row, each col and each sqr) for each val, then each (i,j) cell
     def cellHouses(k,i,j):
@@ -88,6 +89,27 @@ class Puzzle:
         this order"""
         return [k*27+i, k*27+9+j, k*27+9+9+Puzzle.sqr(i,j), 243+i*9+j]
     
+    def initPossUnsolvedHouses(board):
+        """
+        Calculate possibilities just based on solved cells,
+        only intended to initialise puzzle, 
+        as once initialised all solver methods just work with poss and remove 
+        cells from poss directly
+        Also returns list of unsolved house indices
+        """
+        poss = np.full((9,9,9), True)
+        unsolvedHouses = list(range(4*81))
+        for i in range(9):
+            for j in range(9):
+                if board[i,j] != 0:
+                    k = board[i,j]-1
+                    houseIndx = Puzzle.cellHouses(k,i,j)
+                    for indx in houseIndx:
+                        poss[Puzzle.houseMask[indx]] = False
+                        unsolvedHouses.remove(indx)
+                    poss[k,i,j] = True
+        # Similar to solveCell
+        return poss, unsolvedHouses
     
     def __init__(self, board=None, preset='medium1'):
         if board is not None:
@@ -105,11 +127,22 @@ class Puzzle:
                                    [0,0,0,0,0,0,0,0,3],
                                    [3,0,1,0,0,0,6,0,5],
                                    [0,0,0,0,0,7,0,9,0]])
+        elif preset=='medium2':
+            self.board = np.array([[0, 0, 0, 8, 0, 7, 3, 0, 0],
+                                   [0, 6, 7, 0, 0, 0, 0, 1, 0],
+                                   [0, 0, 3, 4, 0, 0, 0, 0, 2],
+                                   [0, 7, 0, 6, 0, 0, 8, 0, 0],
+                                   [2, 0, 0, 0, 4, 0, 0, 0, 0],
+                                   [0, 0, 0, 0, 1, 9, 0, 3, 0],
+                                   [0, 2, 0, 0, 0, 0, 0, 0, 0],
+                                   [0, 0, 8, 0, 0, 0, 0, 0, 9],
+                                   [0, 3, 4, 0, 9, 0, 0, 2, 0]])
         else:
             raise TypeError('Input board, choose preset, or use .enterByLine() method')
-            
-        self.poss = self.initPoss()
-    
+        
+        self.poss, self.unsolvedHouses = Puzzle.initPossUnsolvedHouses(self.board)
+        
+        
     def __repr__(self):
         """Should return string that would yield object when passed to eval()
         """
@@ -128,30 +161,6 @@ class Puzzle:
             board[i,:] = [int(n) for n in input(f"Enter {('1st' if i==0 else ('2nd' if i==1 else ('3rd' if i==2 else f'{i+1}th')))} line: ")]
         return cls(board)
     
-    def initPoss(self):
-        """
-        Calculate possibilities just based on solved cells,
-        only intended to initialise puzzle, 
-        as once initialised all solver methods just work with poss and remove 
-        cells from poss directly
-        """
-        poss = np.full((9,9,9), True)
-        for i in range(9):
-            for j in range(9):
-                if self.board[i,j] != 0:
-                    k = self.board[i,j]-1
-                    houseIndx = Puzzle.cellHouses(k,i,j)
-                    for indx in houseIndx:
-                        poss[Puzzle.houseMask[indx]] = False
-                    # poss[houseMask[vr]] = False
-                    # poss[k,:,j] = False
-                    # poss[k,i,:] = False
-                    # poss[k, (i//3)*3:(i//3)*3+3, (j//3)*3:(j//3)*3+3] = False
-                    poss[k,i,j] = True
-        # This is copied from solveCell, solveCell not used because that 
-        # requires self.poss to already be defined
-        return poss
-    
     
     def showPoss(self):
         #Show column by column values that could go in each row
@@ -167,30 +176,43 @@ class Puzzle:
         for removing possibilities from cells that share house when cell ij=k+1
         and updating board
         """
-        
         self.board[i,j]=k+1
         houseIndx = Puzzle.cellHouses(k,i,j)
         for indx in houseIndx:
             self.poss[Puzzle.houseMask[indx]] = False
+            self.unsolvedHouses.remove(indx)
         self.poss[k,i,j] = True
     
     
         
-    def solve(self):
-        """Main method, solves puzzle.
-        Applies increasingly complex methods
-        Starts with singles: when one cell in a house is only possiblity,
-        it can be solved, removing other possiblitiies from any other house 
-        that cell is in. In usual parlance, this is both hidden (only poss in ij)
-        and naked (only poss in k) singles
+    def solve(self, step=False, simple=False):
+        """Solves puzzle if step=False, solves one cell if step=True.
         
-        Next do ommission, then tuples/x wing/xywing, then full chains/loops
+        Plan:
+        Apply increasingly complex methods
+        Starts with singles, then omission, then looks for doubles, then triples etc.
+        increases order of n-tuples
+        Then do chains - which may involve arbitrarily setting a cell, then 
+        running a simple singles+intersections solve until inconsistency
+        
+        
         """
         
-        # Singles
-        for h in range(len(self.houseMask)):
-            if self.poss[self.houseMask[h]]:
-                pass
-        # Should track houses that are solved, not just cells - saves iterating over all
+        for i in range(100):
+            # Singles
+            for h in self.unsolvedHouses:
+                #note: unsolvedHouses updated as loop occurs, meaning it 
+                # doesn't try to solve houses it has already solved earlier in loop
+                justHouse = self.poss&Puzzle.houseMask[h] # so keeps 9,9,9 shape
+                if np.count_nonzero(justHouse)==1:
+                    k,i,j = np.argwhere(justHouse)[0]
+                    print(f'Found single {k+1} at i,j={i},{j}')
+                    self.solveCell(k,i,j)
+                
+    
+    
+    
+    
+    
     
     
