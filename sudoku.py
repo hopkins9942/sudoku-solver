@@ -15,6 +15,10 @@ import numpy as np
 
 class Puzzle:
     
+    def sqr(i,j):
+        """Gives index of sqr house containing cell ij"""
+        return np.ravel_multi_index((i//3, j//3), (3,3))
+    
     # house masks - take & of a valMask with another mask
     valMask = [np.tile((np.arange(9)==m).reshape(9,1,1), (1,9,9)) for m in range(9)]
     rowMask = [np.tile((np.arange(9)==m).reshape(1,9,1), (9,1,9)) for m in range(9)]
@@ -24,8 +28,20 @@ class Puzzle:
                (9,1,1)) for m in range(9)]
     #For sqrMask, uses Kronecker product to expand a 3*3 array with one True
     # to a 9*9 with the sqr pattern, then tiles into 9*9*9
-    def sqr(i,j):
-        return np.ravel_multi_index((i//3, j//3), (3,3))
+    houseMask = []
+    for k in range(9):
+        houseMask += ([valMask[k]&rowMask[i] for i in range(9)] +
+                      [valMask[k]&colMask[j] for j in range(9)] +
+                      [valMask[k]&sqrMask[s] for s in range(9)])
+    for i in range(9):
+        houseMask += [rowMask[i]&colMask[j] for j in range(9)]
+    assert len(houseMask)==324
+    # houseMask contains all houses now
+    def cellHouses(k,i,j):
+        """Returns flat indices of houses that cell kij is member of,
+        for indexing houseMask"""
+        return [k*27+i, k*27+9+j, k*27+9+9+sqr(i,j), 243+i*9+j]
+    
     
     def __init__(self, board=None, preset='medium1'):
         """Could also add presets for testing"""
@@ -112,10 +128,14 @@ class Puzzle:
         it can be solved, removing other possiblitiies from any other house 
         that cell is in. In usual parlance, this is both hidden (only poss in ij)
         and naked (only poss in k) singles
+        
+        Next do ommission, then tuples/x wing/xywing, then full chains/loops
         """
         
-        # Singles 
-        
-        
+        # Singles
+        for h in range(len(self.houseMask)):
+            if self.poss[self.houseMask[h]]:
+                
+        # Should track houses that are solved, not just cells - saves iterating over all
     
     
