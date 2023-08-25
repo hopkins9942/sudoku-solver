@@ -35,6 +35,8 @@ house, one ensures that there is a single True in each house, where there are
 houses, and row-col, all values in one i,j cell. Solver looks for inconsisties 
 which allow Trues to be set to Falses where they cannot be in solution.
 
+h is id of house in Puzzle.houseMask[h] (complete list of houses)
+hindx refers to index of h in incomplete list i.e. self.unsolvedHouses[hindx]
 
 
 """
@@ -89,6 +91,18 @@ class Puzzle:
         this order"""
         return [k*27+i, k*27+9+j, k*27+9+9+Puzzle.sqr(i,j), 243+i*9+j]
     
+    def h2str(h):
+        if h>=81*3:
+            i = (h-243)//9
+            j = (h-243)-i*9
+            return f'row {i+1}, col {j+1}'
+        else:
+            k = h//27
+            t = h-k*27
+            word = ['row', 'col', 'sqr'][t//9]
+            num = t-9*(t//9)
+            return f'number {k+1}, {word} {num+1}'
+    
     def initPossUnsolvedHouses(board):
         """
         Calculate possibilities just based on solved cells,
@@ -103,10 +117,13 @@ class Puzzle:
             for j in range(9):
                 if board[i,j] != 0:
                     k = board[i,j]-1
-                    houseIndx = Puzzle.cellHouses(k,i,j)
-                    for indx in houseIndx:
-                        poss[Puzzle.houseMask[indx]] = False
-                        unsolvedHouses.remove(indx)
+                    fourhs = Puzzle.cellHouses(k,i,j)
+                    for h in fourhs:
+                        poss[Puzzle.houseMask[h]] = False
+                        try:
+                            unsolvedHouses.remove(h)
+                        except ValueError:
+                            raise ValueError(f'Likely mistake in house: {Puzzle.h2str(h)}')
                     poss[k,i,j] = True
         # Similar to solveCell
         return poss, unsolvedHouses
@@ -137,6 +154,17 @@ class Puzzle:
                                    [0, 2, 0, 0, 0, 0, 0, 0, 0],
                                    [0, 0, 8, 0, 0, 0, 0, 0, 9],
                                    [0, 3, 4, 0, 9, 0, 0, 2, 0]])
+            
+        elif preset=='hard1':
+            self.board = np.array([[0, 4, 2, 8, 0, 0, 0, 0, 5],
+                                   [0, 6, 0, 0, 1, 0, 0, 0, 0],
+                                   [0, 0, 1, 0, 0, 0, 0, 3, 9],
+                                   [6, 0, 5, 0, 0, 3, 4, 0, 8],
+                                   [0, 2, 8, 0, 0, 0, 0, 0, 3],
+                                   [9, 0, 0, 0, 0, 0, 0, 0, 0],
+                                   [0, 0, 0, 0, 0, 0, 9, 4, 0],
+                                   [0, 5, 0, 4, 0, 0, 0, 0, 0],
+                                   [0, 0, 4, 0, 0, 1, 0, 8, 2]])
         else:
             raise TypeError('Input board, choose preset, or use .enterByLine() method')
         
@@ -161,6 +189,10 @@ class Puzzle:
             board[i,:] = [int(n) for n in input(f"Enter {('1st' if i==0 else ('2nd' if i==1 else ('3rd' if i==2 else f'{i+1}th')))} line: ")]
         return cls(board)
     
+    def checkPoss(self):
+        for h in range(81*4):
+            if np.count_nonzero(self.poss[Puzzle.houseMask[h]])<1:
+                raise ValueError(f'house {h} ({Puzzle.h2str(h)}) has <1 possible value!')
     
     def showPoss(self):
         #Show column by column values that could go in each row
@@ -177,10 +209,10 @@ class Puzzle:
         and updating board
         """
         self.board[i,j]=k+1
-        houseIndx = Puzzle.cellHouses(k,i,j)
-        for indx in houseIndx:
-            self.poss[Puzzle.houseMask[indx]] = False
-            self.unsolvedHouses.remove(indx)
+        fourhs = Puzzle.cellHouses(k,i,j)
+        for h in fourhs:
+            self.poss[Puzzle.houseMask[h]] = False
+            self.unsolvedHouses.remove(h)
         self.poss[k,i,j] = True
     
     
@@ -194,21 +226,65 @@ class Puzzle:
         increases order of n-tuples
         Then do chains - which may involve arbitrarily setting a cell, then 
         running a simple singles+intersections solve until inconsistency
-        
-        
+        This means I need a consisiteency detector - houses with no Trues
         """
+        self.solve_singles(step)
+        # if simple:
+        #     return 0
+        # else:
+            
         
-        for i in range(100):
-            # Singles
+    def solve_singles(self, step=False):
+        for sweep in range(81 if not step else 1):
+            #81 as each sweep should find at least one cell
+            # 1 for just one step
             for h in self.unsolvedHouses:
                 #note: unsolvedHouses updated as loop occurs, meaning it 
                 # doesn't try to solve houses it has already solved earlier in loop
                 justHouse = self.poss&Puzzle.houseMask[h] # so keeps 9,9,9 shape
                 if np.count_nonzero(justHouse)==1:
                     k,i,j = np.argwhere(justHouse)[0]
-                    print(f'Found single {k+1} at i,j={i},{j}')
+                    if h<81:
+                        solvetype = '   row hidden'
+                    elif h<81*2:
+                        solvetype = 'column hidden'
+                    elif h<81*3:
+                        solvetype = 'square hidden'
+                    elif h<81*4:
+                        solvetype = '        naked'
+                    print(f'Found {solvetype} single {k+1} at row {i+1}, column {j+1}')
                     self.solveCell(k,i,j)
-                
+                    break
+            # reset means will find all hiddens before stars on nakeds
+            # possibly easier for user
+            
+            if self.unsolvedHouses==[]:
+                print('Sudoku solved!')
+                return self.board
+            elif h==self.unsolvedHouses[-1]:
+                print('Solver has solved all it can!')
+                return self.board
+    
+    def solve_intersections(self, step=False):
+        for sweep in range(81 if not step else 1):
+            
+            # plan - find rows and cols, then search for corresponding sqrs
+            
+            
+            #find sqrs
+            sqr_hindx = np.nonzero(81*3<=np.array(self.unsolvedHouses)<81*4)[0]
+            sqr_h = self.unsolvedHouses[sqr_hindx]
+            
+            
+            
+            for ih1 in range(len(self.unsolvedHouses)-1):
+                for ih2 in range(ih1+1, len(self.unsolvedHouses)):
+                    # all unordered pairs
+                    h1, h2 = self.unsolvedHouses[ih1], self.unsolvedHouses[ih2]
+                    #wrong approach - look for overlapping pairs - one will always be sqr
+                    
+    
+    
     
     
     
