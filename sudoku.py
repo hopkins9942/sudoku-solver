@@ -38,7 +38,9 @@ which allow Trues to be set to Falses where they cannot be in solution.
 h is id of house in Puzzle.houseMask[h] (complete list of houses)
 hindx refers to index of h in incomplete list i.e. self.unsolvedHouses[hindx]
 
-
+all internals (ijksh) are zero indexed,
+outputs (row, column, value, square, house) are 1-indexed
+exception is error messages which refer to zero indexed h
 """
 
 import numpy as np
@@ -91,6 +93,18 @@ class Puzzle:
         this order"""
         return [k*27+i, k*27+9+j, k*27+9+9+Puzzle.sqr(i,j), 243+i*9+j]
     
+    # def h2ijk(h):
+    #     if h>=81*3:
+    #         i = (h-243)//9
+    #         j = (h-243)-i*9
+    #         return f'row {i+1}, col {j+1}'
+    #     else:
+    #         k = h//27
+    #         t = h-k*27
+    #         word = ['row', 'col', 'sqr'][t//9]
+    #         num = t-9*(t//9)
+    #         return f'number {k+1}, {word} {num+1}'
+        
     def h2str(h):
         if h>=81*3:
             i = (h-243)//9
@@ -99,10 +113,11 @@ class Puzzle:
         else:
             k = h//27
             t = h-k*27
-            word = ['row', 'col', 'sqr'][t//9]
+            word = ['row', 'column', 'square'][t//9]
             num = t-9*(t//9)
-            return f'number {k+1}, {word} {num+1}'
-    
+            return f'value {k+1}, {word} {num+1}'
+            
+
     def initPossUnsolvedHouses(board):
         """
         Calculate possibilities just based on solved cells,
@@ -110,20 +125,23 @@ class Puzzle:
         as once initialised all solver methods just work with poss and remove 
         cells from poss directly
         Also returns list of unsolved house indices
+        
+        Going by the puzzles in my app, medium can be solved by singles only,
+        hard by singles+intersections.
         """
         poss = np.full((9,9,9), True)
-        unsolvedHouses = list(range(4*81))
+        unsolvedHouses = np.arange(4*81)
         for i in range(9):
             for j in range(9):
                 if board[i,j] != 0:
                     k = board[i,j]-1
                     fourhs = Puzzle.cellHouses(k,i,j)
                     for h in fourhs:
+                        if np.count_nonzero(unsolvedHouses==h)!=1:
+                            # Something wrong, likely invalid board entered
+                            raise ValueError(f'Likely error in entered board, h={h}: {Puzzle.h2str(h)}')
                         poss[Puzzle.houseMask[h]] = False
-                        try:
-                            unsolvedHouses.remove(h)
-                        except ValueError:
-                            raise ValueError(f'Likely mistake in house: {Puzzle.h2str(h)}')
+                        unsolvedHouses = np.delete(unsolvedHouses, unsolvedHouses==h)
                     poss[k,i,j] = True
         # Similar to solveCell
         return poss, unsolvedHouses
@@ -165,6 +183,26 @@ class Puzzle:
                                    [0, 0, 0, 0, 0, 0, 9, 4, 0],
                                    [0, 5, 0, 4, 0, 0, 0, 0, 0],
                                    [0, 0, 4, 0, 0, 1, 0, 8, 2]])
+        elif preset=='hard2':
+            self.board = np.array([[0, 0, 0, 0, 1, 0, 2, 0, 7],
+                                   [1, 0, 8, 2, 0, 0, 9, 5, 0],
+                                   [0, 0, 0, 0, 5, 4, 0, 0, 8],
+                                   [9, 0, 0, 0, 6, 0, 0, 7, 0],
+                                   [2, 0, 0, 0, 0, 0, 0, 0, 0],
+                                   [0, 7, 0, 0, 0, 0, 0, 8, 0],
+                                   [5, 0, 0, 8, 0, 0, 6, 1, 0],
+                                   [0, 0, 2, 0, 0, 1, 0, 0, 0],
+                                   [7, 0, 0, 0, 0, 5, 0, 0, 0]])
+        elif preset=='diabolic1':
+            self.board = np.array([[0, 0, 4, 2, 0, 0, 0, 0, 0],
+                                   [0, 8, 0, 7, 1, 0, 0, 0, 0],
+                                   [0, 2, 0, 0, 0, 6, 0, 0, 0],
+                                   [3, 0, 6, 0, 0, 4, 0, 0, 1],
+                                   [0, 0, 0, 0, 8, 0, 6, 0, 3],
+                                   [0, 0, 0, 6, 0, 3, 7, 9, 0],
+                                   [4, 0, 2, 8, 0, 0, 0, 0, 0],
+                                   [0, 0, 1, 4, 2, 7, 0, 0, 0],
+                                   [0, 0, 0, 0, 0, 0, 0, 7, 0]])
         else:
             raise TypeError('Input board, choose preset, or use .enterByLine() method')
         
@@ -192,7 +230,7 @@ class Puzzle:
     def checkPoss(self):
         for h in range(81*4):
             if np.count_nonzero(self.poss[Puzzle.houseMask[h]])<1:
-                raise ValueError(f'house {h} ({Puzzle.h2str(h)}) has <1 possible value!')
+                raise ValueError(f'h={h} ({Puzzle.h2str(h)}) has <1 possible value!')
     
     def showPoss(self):
         #Show column by column values that could go in each row
@@ -212,7 +250,7 @@ class Puzzle:
         fourhs = Puzzle.cellHouses(k,i,j)
         for h in fourhs:
             self.poss[Puzzle.houseMask[h]] = False
-            self.unsolvedHouses.remove(h)
+            self.unsolvedHouses = np.delete(self.unsolvedHouses, self.unsolvedHouses==h)
         self.poss[k,i,j] = True
     
     
@@ -226,12 +264,28 @@ class Puzzle:
         increases order of n-tuples
         Then do chains - which may involve arbitrarily setting a cell, then 
         running a simple singles+intersections solve until inconsistency
-        This means I need a consisiteency detector - houses with no Trues
+        This means I need a consisiteency detector - houses with no Trues, or house already removed from unsolvedHouses
+        
+        output board
+        
+        subfunctions return 1 if it progress made so should try simpler technique again, 
+        -1 if no progress made so try more complex technique,
+        and 0 if board solved so can exit!
+        
+        sort print statements
         """
-        self.solve_singles(step)
-        # if simple:
-        #     return 0
-        # else:
+        
+        c2f = [self.solve_singles, self.solve_intersection] # which f to use at each complexity level
+        c = 0 # complexity level
+        for sweep in range(81 if not step else 1):
+            out = c2f[c]()
+            c -= out
+            if out==0:
+                print('Sudoku solved!')
+                return self.board
+            elif c==len(c2f):
+                print('Solver out of ideas - you\'re on your own from here!')
+                return self.board
             
         
     def solve_singles(self, step=False):
@@ -244,45 +298,98 @@ class Puzzle:
                 justHouse = self.poss&Puzzle.houseMask[h] # so keeps 9,9,9 shape
                 if np.count_nonzero(justHouse)==1:
                     k,i,j = np.argwhere(justHouse)[0]
-                    if h<81:
-                        solvetype = '   row hidden'
-                    elif h<81*2:
-                        solvetype = 'column hidden'
-                    elif h<81*3:
-                        solvetype = 'square hidden'
-                    elif h<81*4:
+                    
+                    if h>=81*3:
                         solvetype = '        naked'
-                    print(f'Found {solvetype} single {k+1} at row {i+1}, column {j+1}')
+                    else:
+                        t = h-27*(h//27) # note h//27 = k
+                        solvetype = ['   row hidden',
+                                     'column hidden',
+                                     'square hidden'][t//9]
+                    # if h<81:
+                    #     solvetype = '   row hidden'
+                    # elif h<81*2:
+                    #     solvetype = 'column hidden'
+                    # elif h<81*3:
+                    #     solvetype = 'square hidden' # ERROR - houses not divided like this
+                    # else: # equiv elif h<81*4:
+                    #     solvetype = '        naked'
+                    print(f'Found {solvetype} single value {k+1} at row {i+1}, column {j+1}')
                     self.solveCell(k,i,j)
                     break
             # reset means will find all hiddens before stars on nakeds
             # possibly easier for user
             
-            if self.unsolvedHouses==[]:
-                print('Sudoku solved!')
-                return self.board
+            if len(self.unsolvedHouses)==0:
+                return 0
             elif h==self.unsolvedHouses[-1]:
-                print('Solver has solved all it can!')
-                return self.board
+                print('No more singles, now searching for an intersection.')
+                return -1
     
-    def solve_intersections(self, step=False):
-        for sweep in range(81 if not step else 1):
+    
+    def solve_intersection(self, step=False):
+        """
+        Current bug: finds an intersection, eturns to singles, doen't find any
+        returns to intersections finds same intersection, repeat"""
+        # for sweep in range(81 if not step else 1):
+            #may want to go back to singles every time intersection found - easier for user
             
-            # plan - find rows and cols, then search for corresponding sqrs
+        # plan - sweep all houses h<81*3, find where truths lie all in only one other house
+        #put plan in docstring
+        for h in self.unsolvedHouses[self.unsolvedHouses<81*3]:
+            truth_coords = np.nonzero(self.poss[Puzzle.houseMask[h]])[0]
+            if len(truth_coords)>3:
+                #intersection impossible
+                continue
             
+            # below find that if intersection exists, finds otherh
+            otherh = -1
+            thirds = truth_coords//3 # 000111222
+            if np.all(thirds==thirds[0]):
+                #all equal, therefore intersection 
+                if (h-27*(h//27))//9==0:
+                    #row
+                    i = h - 27*(h//27)
+                    s = 3*(i//3) + thirds[0] # gives index of square
+                    otherh = 27*(h//27) + 18 + s
+                elif (h-27*(h//27))//9==1:
+                    #col
+                    j = h - 27*(h//27) - 9
+                    s = j//3 + 3*thirds[0]
+                    otherh = 27*(h//27) + 18 + s
+                elif (h-27*(h//27))//9==2:
+                    #sqr-row
+                    s = h - 27*(h//27) - 18
+                    i = 3*(s//3) + thirds[0]
+                    otherh = 27*(h//27) + i
+                else:
+                    raise ValueError('This line should not be run')
+            #sqr-col
+            altthirds = truth_coords%3 # 012012012
+            if np.all(altthirds==altthirds[0])and((h-27*(h//27))//9==2):
+                #all equal and h is square therefore sqr-col intersection
+                s = h - 27*(h//27) - 18
+                j = 3*(s%3) + altthirds[0]
+                otherh = 27*(h//27) + 9 + j
             
-            #find sqrs
-            sqr_hindx = np.nonzero(81*3<=np.array(self.unsolvedHouses)<81*4)[0]
-            sqr_h = self.unsolvedHouses[sqr_hindx]
-            
-            
-            
-            for ih1 in range(len(self.unsolvedHouses)-1):
-                for ih2 in range(ih1+1, len(self.unsolvedHouses)):
-                    # all unordered pairs
-                    h1, h2 = self.unsolvedHouses[ih1], self.unsolvedHouses[ih2]
-                    #wrong approach - look for overlapping pairs - one will always be sqr
-                    
+            if otherh!=-1:
+                #intersection found
+                #h is house with all truths in one other house, otherh
+                # first checks if anything new gained
+                mask = Puzzle.houseMask[otherh]&np.logical_not(Puzzle.houseMask[h])
+                if np.count_nonzero(self.poss[mask])==0:
+                    #nothing to be gained, possibly found this intersection before
+                    continue
+                # now removing other possibilities from otherh
+                print(f'Intersection found: {Puzzle.h2str(h)} to house {Puzzle.h2str(otherh)} ({h}-{otherh}).')
+                self.poss[mask] = False
+                return 1
+        
+        if h == self.unsolvedHouses[self.unsolvedHouses<81*3][-1]:
+            #no intersection found
+            print('No intersections found.')
+            return -1
+        
     
     
     
