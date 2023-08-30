@@ -41,6 +41,13 @@ hindx refers to index of h in incomplete list i.e. self.unsolvedHouses[hindx]
 all internals (ijksh) are zero indexed,
 outputs (row, column, value, square, house) are 1-indexed
 exception is error messages which refer to zero indexed h
+
+all this would work for hexidecimal and 4by4 sudoku
+
+
+New Plan:
+    singles and SSI is only needed, so write singles method to be used by SSI
+    Also write inconsistency cheker with order argument
 """
 
 import numpy as np
@@ -193,6 +200,16 @@ class Puzzle:
                                    [5, 0, 0, 8, 0, 0, 6, 1, 0],
                                    [0, 0, 2, 0, 0, 1, 0, 0, 0],
                                    [7, 0, 0, 0, 0, 5, 0, 0, 0]])
+        elif preset=='hard5':
+            self.board = np.array([[0, 0, 8, 0, 0, 0, 3, 0, 0],
+                                   [6, 0, 0, 0, 0, 0, 9, 0, 0],
+                                   [0, 1, 0, 0, 0, 9, 0, 0, 0],
+                                   [0, 0, 0, 0, 6, 7, 8, 5, 0],
+                                   [0, 0, 7, 5, 0, 2, 6, 0, 0],
+                                   [0, 0, 0, 0, 1, 0, 0, 9, 0],
+                                   [0, 0, 9, 2, 0, 0, 0, 8, 0],
+                                   [0, 0, 6, 3, 7, 0, 0, 0, 0],
+                                   [3, 0, 5, 9, 0, 0, 0, 0, 0]])# can't be solved by intersection
         elif preset=='diabolic1':
             self.board = np.array([[0, 0, 4, 2, 0, 0, 0, 0, 0],
                                    [0, 8, 0, 7, 1, 0, 0, 0, 0],
@@ -203,6 +220,26 @@ class Puzzle:
                                    [4, 0, 2, 8, 0, 0, 0, 0, 0],
                                    [0, 0, 1, 4, 2, 7, 0, 0, 0],
                                    [0, 0, 0, 0, 0, 0, 0, 7, 0]])
+        elif preset=='diabolic2':
+            self.board = np.array([[0, 6, 0, 0, 0, 4, 0, 0, 0],
+                                   [0, 0, 2, 3, 6, 0, 0, 0, 0],
+                                   [9, 0, 0, 7, 0, 0, 0, 0, 0],
+                                   [0, 9, 0, 6, 8, 0, 0, 4, 0],
+                                   [0, 0, 0, 0, 0, 3, 0, 9, 0],
+                                   [0, 5, 0, 0, 0, 0, 0, 7, 0],
+                                   [7, 0, 3, 0, 0, 0, 9, 5, 0],
+                                   [0, 0, 0, 0, 3, 0, 0, 0, 0],
+                                   [5, 0, 0, 4, 0, 9, 2, 6, 0]])
+        elif preset=='diabolic3':
+            self.board = np.array([[0, 7, 5, 0, 1, 6, 0, 0, 3],
+                                   [0, 0, 4, 0, 0, 0, 0, 5, 1],
+                                   [8, 0, 0, 0, 0, 7, 0, 0, 0],
+                                   [0, 0, 1, 0, 8, 0, 0, 0, 0],
+                                   [0, 8, 7, 0, 0, 9, 0, 0, 0],
+                                   [0, 0, 0, 0, 0, 0, 5, 9, 0],
+                                   [0, 0, 0, 3, 0, 0, 0, 0, 0],
+                                   [0, 0, 3, 0, 5, 0, 0, 1, 0],
+                                   [0, 0, 0, 0, 0, 0, 0, 7, 4]])#the only diabolic I solved by hand
         else:
             raise TypeError('Input board, choose preset, or use .enterByLine() method')
         
@@ -277,7 +314,7 @@ class Puzzle:
         
         c2f = [self.solve_singles, self.solve_intersection] # which f to use at each complexity level
         c = 0 # complexity level
-        for sweep in range(81 if not step else 1):
+        for sweep in range(100):# could calculate maximum possible number of sweeps based on 81 max numbers to fill, some number max intersections etc
             out = c2f[c]()
             c -= out
             if out==0:
@@ -326,11 +363,31 @@ class Puzzle:
                 print('No more singles, now searching for an intersection.')
                 return -1
     
+    def solve_breadth_first(self, maxDepth):
+        """As on tin"""
+        pass
+    
+    
+    def SSI(self, order=1):
+        """Ultimate solving method, cannot fail.
+        Supposes a cell, then solves singles checking for inconsistencies. 
+        Solve occurs breadth-first for easy-to-find chains, with maximum depth 
+        that increases depth steadily. 
+        Order is the level of inconsistencies searched for, n parallel houses
+        with <n shared houses to put poss in
+        After working, set up naming"""
+        possList = np.argwhere(self.poss) but unsolved
+        testPuzzle = Puzzle(board=self.board) # check this isn't shallow copy
+        for n in range(possList.shape[0]):
+            testPuzzle = Puzzle(board=self.board) # check this isn't shallow copy
+            testPuzzle.solve(*possList[n,:])
+            
     
     def solve_intersection(self, step=False):
         """
         Current bug: finds an intersection, eturns to singles, doen't find any
-        returns to intersections finds same intersection, repeat"""
+        returns to intersections finds same intersection, repeat
+        May be replaceable by SSI"""
         # for sweep in range(81 if not step else 1):
             #may want to go back to singles every time intersection found - easier for user
             
