@@ -47,7 +47,13 @@ all this would work for hexidecimal and 4by4 sudoku
 
 New Plan:
     singles and SSI is only needed, so write singles method to be used by SSI
+    solveCell should recursively breadth-first solve all resultant singles
+    is bredth first strictly needed if it  checks inconsistency each time and can be depth limited
     Also write inconsistency cheker with order argument
+    So far not using uniqueness as I cansider it cheating.
+    
+    Pattern spotting better for fish etc. so implement later after SSI working.
+    Do some puzzles require uniqueness to solve? 
 """
 
 import numpy as np
@@ -100,6 +106,16 @@ class Puzzle:
         this order"""
         return [k*27+i, k*27+9+j, k*27+9+9+Puzzle.sqr(i,j), 243+i*9+j]
     
+    def cellHousesMask(k,i,j):
+        """Returns mask of all cells linked to cell ijk"""
+        hs = Puzzle.cellHouses(k,i,j)
+        mask = np.zeros((9,9))
+        for h in hs:
+            mask = np.logical_or(mask, Puzzle.houseMask[h])
+        mask[k,i,j] = False
+        return mask
+        
+        
     # def h2ijk(h):
     #     if h>=81*3:
     #         i = (h-243)//9
@@ -278,21 +294,12 @@ class Puzzle:
                 print(nums)
         # n.b. single poss values are solved cells
     
-    def solveCell(self, k, i, j):
-        """
-        for removing possibilities from cells that share house when cell ij=k+1
-        and updating board
-        """
-        self.board[i,j]=k+1
-        fourhs = Puzzle.cellHouses(k,i,j)
-        for h in fourhs:
-            self.poss[Puzzle.houseMask[h]] = False
-            self.unsolvedHouses = np.delete(self.unsolvedHouses, self.unsolvedHouses==h)
-        self.poss[k,i,j] = True
     
+    # new methods
     
-        
-    def solve(self, step=False, simple=False):
+    def solve(self, step=False):
+        """SOlve singles, then do SSI with increasing depth and order
+        """
         """Solves puzzle if step=False, solves one cell if step=True.
         
         Plan:
@@ -311,20 +318,50 @@ class Puzzle:
         
         sort print statements
         """
+        return self.solve_singles(step)
         
-        c2f = [self.solve_singles, self.solve_intersection] # which f to use at each complexity level
-        c = 0 # complexity level
-        for sweep in range(100):# could calculate maximum possible number of sweeps based on 81 max numbers to fill, some number max intersections etc
-            out = c2f[c]()
-            c -= out
-            if out==0:
-                print('Sudoku solved!')
-                return self.board
-            elif c==len(c2f):
-                print('Solver out of ideas - you\'re on your own from here!')
-                return self.board
+        # c2f = [self.solve_singles, self.solve_intersection] # which f to use at each complexity level
+        # c = 0 # complexity level
+        # for sweep in range(100):# could calculate maximum possible number of sweeps based on 81 max numbers to fill, some number max intersections etc
+        #     out = c2f[c]()
+        #     c -= out
+        #     if out==0:
+        #         print('Sudoku solved!')
+        #         return self.board
+        #     elif c==len(c2f):
+        #         print('Solver out of ideas - you\'re on your own from here!')
+        #         return self.board
             
+    
+    def solveCell(self, k, i, j, depthToGo=0):
+        """
+        for removing possibilities from cells that share house when cell ijk 
+        is solution and updating board and unsolvedHouses
         
+        Could add to so checks if solving cell creates more singles to solve
+        
+        need to put print staements here
+        """
+        self.board[i,j]=k+1
+        mask = Puzzle.cellHousesMask(k,i,j)
+        self.poss[mask] = False
+        self.poss[k,i,j] = True
+        self.check()
+        if depthToGo>=1:
+            linkedCells = np.argwhere(self.poss&mask) 
+            for n in range(linkedCells.shape[0]):
+                self.solveCell(*linkedCells[n,:], depthToGo=depthToGo-1)    
+        
+        fourhs = Puzzle.cellHouses(k,i,j)
+        for h in fourhs:
+            self.unsolvedHouses = np.delete(self.unsolvedHouses, self.unsolvedHouses==h)#is unsolvedHouses necessary in new system?
+        
+        
+    def check(order=1):
+        """checks for existence of n parallel houses with <n shared houses
+        to put poss in"""
+        pass
+    
     def solve_singles(self, step=False):
         for sweep in range(81 if not step else 1):
             #81 as each sweep should find at least one cell
@@ -334,54 +371,44 @@ class Puzzle:
                 # doesn't try to solve houses it has already solved earlier in loop
                 justHouse = self.poss&Puzzle.houseMask[h] # so keeps 9,9,9 shape
                 if np.count_nonzero(justHouse)==1:
+                    #single 
                     k,i,j = np.argwhere(justHouse)[0]
-                    
                     if h>=81*3:
                         solvetype = '        naked'
                     else:
                         t = h-27*(h//27) # note h//27 = k
                         solvetype = ['   row hidden',
-                                     'column hidden',
-                                     'square hidden'][t//9]
-                    # if h<81:
-                    #     solvetype = '   row hidden'
-                    # elif h<81*2:
-                    #     solvetype = 'column hidden'
-                    # elif h<81*3:
-                    #     solvetype = 'square hidden' # ERROR - houses not divided like this
-                    # else: # equiv elif h<81*4:
-                    #     solvetype = '        naked'
+                                      'column hidden',
+                                      'square hidden'][t//9]
                     print(f'Found {solvetype} single value {k+1} at row {i+1}, column {j+1}')
-                    self.solveCell(k,i,j)
+                    self.solveCell(k,i,j, depthToGo=9**3 if not step else 1)
                     break
-            # reset means will find all hiddens before stars on nakeds
-            # possibly easier for user
             
             if len(self.unsolvedHouses)==0:
+                #solved!
                 return 0
             elif h==self.unsolvedHouses[-1]:
                 print('No more singles, now searching for an intersection.')
                 return -1
-    
-    def solve_breadth_first(self, maxDepth):
-        """As on tin"""
+        
+    def SSI():
+        """
+        copy puzzle, suppose cell, solve to some depth then look for inconsistencies 
+        of some order. Reapeat, increasing depth and order.
+        solveCell could do breadth-first and trace chain automatically.
+        intersections are found by depth 0 order 1
+        X-wings (naked and hidden tuples) found by depth 0 order 2, or depth 1 order 1
+        n-fish (n-tuples) including fins found by depth 0 order n-1
+        All non-fish examples I've seen can be solved by order 1, any depth
+        If all else fails, can do hogh deptha and high order
+        Structure: could depth limit, or could just chek inconsistencies when 
+        stops finding singles - danger is this could find complicated chains before
+        shorter more obvious ones. Other danger is trying every poss at depth 1,
+        then depth2, then depth 3, .. recalculating every time.
+        It is possible that there's always a low-depth chain to find, alternatively 
+        could do depth first, log all chains, and print and use the lowest depth one!
+        """
         pass
-    
-    
-    def SSI(self, order=1):
-        """Ultimate solving method, cannot fail.
-        Supposes a cell, then solves singles checking for inconsistencies. 
-        Solve occurs breadth-first for easy-to-find chains, with maximum depth 
-        that increases depth steadily. 
-        Order is the level of inconsistencies searched for, n parallel houses
-        with <n shared houses to put poss in
-        After working, set up naming"""
-        possList = np.argwhere(self.poss) but unsolved
-        testPuzzle = Puzzle(board=self.board) # check this isn't shallow copy
-        for n in range(possList.shape[0]):
-            testPuzzle = Puzzle(board=self.board) # check this isn't shallow copy
-            testPuzzle.solve(*possList[n,:])
-            
     
     def solve_intersection(self, step=False):
         """
@@ -446,6 +473,180 @@ class Puzzle:
             #no intersection found
             print('No intersections found.')
             return -1
+        
+    
+    
+    
+    
+    # old methods
+    
+    # def solveCell(self, k, i, j):
+    #     """
+    #     for removing possibilities from cells that share house when cell ij=k+1
+    #     and updating board
+    #     """
+    #     self.board[i,j]=k+1
+    #     fourhs = Puzzle.cellHouses(k,i,j)
+    #     for h in fourhs:
+    #         self.poss[Puzzle.houseMask[h]] = False
+    #         self.unsolvedHouses = np.delete(self.unsolvedHouses, self.unsolvedHouses==h)
+    #     self.poss[k,i,j] = True
+    
+        
+    # def solve(self, step=False, simple=False):
+    #     """Solves puzzle if step=False, solves one cell if step=True.
+        
+    #     Plan:
+    #     Apply increasingly complex methods
+    #     Starts with singles, then omission, then looks for doubles, then triples etc.
+    #     increases order of n-tuples
+    #     Then do chains - which may involve arbitrarily setting a cell, then 
+    #     running a simple singles+intersections solve until inconsistency
+    #     This means I need a consisiteency detector - houses with no Trues, or house already removed from unsolvedHouses
+        
+    #     output board
+        
+    #     subfunctions return 1 if it progress made so should try simpler technique again, 
+    #     -1 if no progress made so try more complex technique,
+    #     and 0 if board solved so can exit!
+        
+    #     sort print statements
+    #     """
+        
+    #     c2f = [self.solve_singles, self.solve_intersection] # which f to use at each complexity level
+    #     c = 0 # complexity level
+    #     for sweep in range(100):# could calculate maximum possible number of sweeps based on 81 max numbers to fill, some number max intersections etc
+    #         out = c2f[c]()
+    #         c -= out
+    #         if out==0:
+    #             print('Sudoku solved!')
+    #             return self.board
+    #         elif c==len(c2f):
+    #             print('Solver out of ideas - you\'re on your own from here!')
+    #             return self.board
+            
+        
+    # def solve_singles(self, step=False):
+    #     for sweep in range(81 if not step else 1):
+    #         #81 as each sweep should find at least one cell
+    #         # 1 for just one step
+    #         for h in self.unsolvedHouses:
+    #             #note: unsolvedHouses updated as loop occurs, meaning it 
+    #             # doesn't try to solve houses it has already solved earlier in loop
+    #             justHouse = self.poss&Puzzle.houseMask[h] # so keeps 9,9,9 shape
+    #             if np.count_nonzero(justHouse)==1:
+    #                 k,i,j = np.argwhere(justHouse)[0]
+                    
+    #                 if h>=81*3:
+    #                     solvetype = '        naked'
+    #                 else:
+    #                     t = h-27*(h//27) # note h//27 = k
+    #                     solvetype = ['   row hidden',
+    #                                  'column hidden',
+    #                                  'square hidden'][t//9]
+    #                 # if h<81:
+    #                 #     solvetype = '   row hidden'
+    #                 # elif h<81*2:
+    #                 #     solvetype = 'column hidden'
+    #                 # elif h<81*3:
+    #                 #     solvetype = 'square hidden' # ERROR - houses not divided like this
+    #                 # else: # equiv elif h<81*4:
+    #                 #     solvetype = '        naked'
+    #                 print(f'Found {solvetype} single value {k+1} at row {i+1}, column {j+1}')
+    #                 self.solveCell(k,i,j)
+    #                 break
+    #         # reset means will find all hiddens before stars on nakeds
+    #         # possibly easier for user
+            
+    #         if len(self.unsolvedHouses)==0:
+    #             return 0
+    #         elif h==self.unsolvedHouses[-1]:
+    #             print('No more singles, now searching for an intersection.')
+    #             return -1
+    
+    # def solve_breadth_first(self, maxDepth):
+    #     """As on tin"""
+    #     pass
+    
+    
+    # def SSI(self, order=1):
+    #     """Ultimate solving method, cannot fail.
+    #     Supposes a cell, then solves singles checking for inconsistencies. 
+    #     Solve occurs breadth-first for easy-to-find chains, with maximum depth 
+    #     that increases depth steadily. 
+    #     Order is the level of inconsistencies searched for, n parallel houses
+    #     with <n shared houses to put poss in
+    #     After working, set up naming"""
+    #     possList = np.argwhere(self.poss) but unsolved
+    #     testPuzzle = Puzzle(board=self.board) # check this isn't shallow copy
+    #     for n in range(possList.shape[0]):
+    #         testPuzzle = Puzzle(board=self.board) # check this isn't shallow copy
+    #         testPuzzle.solve(*possList[n,:])
+            
+    
+    # def solve_intersection(self, step=False):
+    #     """
+    #     Current bug: finds an intersection, eturns to singles, doen't find any
+    #     returns to intersections finds same intersection, repeat
+    #     May be replaceable by SSI"""
+    #     # for sweep in range(81 if not step else 1):
+    #         #may want to go back to singles every time intersection found - easier for user
+            
+    #     # plan - sweep all houses h<81*3, find where truths lie all in only one other house
+    #     #put plan in docstring
+    #     for h in self.unsolvedHouses[self.unsolvedHouses<81*3]:
+    #         truth_coords = np.nonzero(self.poss[Puzzle.houseMask[h]])[0]
+    #         if len(truth_coords)>3:
+    #             #intersection impossible
+    #             continue
+            
+    #         # below find that if intersection exists, finds otherh
+    #         otherh = -1
+    #         thirds = truth_coords//3 # 000111222
+    #         if np.all(thirds==thirds[0]):
+    #             #all equal, therefore intersection 
+    #             if (h-27*(h//27))//9==0:
+    #                 #row
+    #                 i = h - 27*(h//27)
+    #                 s = 3*(i//3) + thirds[0] # gives index of square
+    #                 otherh = 27*(h//27) + 18 + s
+    #             elif (h-27*(h//27))//9==1:
+    #                 #col
+    #                 j = h - 27*(h//27) - 9
+    #                 s = j//3 + 3*thirds[0]
+    #                 otherh = 27*(h//27) + 18 + s
+    #             elif (h-27*(h//27))//9==2:
+    #                 #sqr-row
+    #                 s = h - 27*(h//27) - 18
+    #                 i = 3*(s//3) + thirds[0]
+    #                 otherh = 27*(h//27) + i
+    #             else:
+    #                 raise ValueError('This line should not be run')
+    #         #sqr-col
+    #         altthirds = truth_coords%3 # 012012012
+    #         if np.all(altthirds==altthirds[0])and((h-27*(h//27))//9==2):
+    #             #all equal and h is square therefore sqr-col intersection
+    #             s = h - 27*(h//27) - 18
+    #             j = 3*(s%3) + altthirds[0]
+    #             otherh = 27*(h//27) + 9 + j
+            
+    #         if otherh!=-1:
+    #             #intersection found
+    #             #h is house with all truths in one other house, otherh
+    #             # first checks if anything new gained
+    #             mask = Puzzle.houseMask[otherh]&np.logical_not(Puzzle.houseMask[h])
+    #             if np.count_nonzero(self.poss[mask])==0:
+    #                 #nothing to be gained, possibly found this intersection before
+    #                 continue
+    #             # now removing other possibilities from otherh
+    #             print(f'Intersection found: {Puzzle.h2str(h)} to house {Puzzle.h2str(otherh)} ({h}-{otherh}).')
+    #             self.poss[mask] = False
+    #             return 1
+        
+    #     if h == self.unsolvedHouses[self.unsolvedHouses<81*3][-1]:
+    #         #no intersection found
+    #         print('No intersections found.')
+    #         return -1
         
     
     
