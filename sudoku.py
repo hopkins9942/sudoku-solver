@@ -53,7 +53,7 @@ New Plan:
     So far not using uniqueness as I cansider it cheating.
     
     Pattern spotting better for fish etc. so implement later after SSI working.
-    Do some puzzles require uniqueness to solve? 
+    Do some single-solution puzzles still require uniqueness to solve?
 """
 
 import numpy as np
