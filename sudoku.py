@@ -31,15 +31,15 @@ a possibility for the (i,j)th cell on the original board.
 
 In this representation, instead of ensuring there is one of each number in each
 house, one ensures that there is a single True in each house, where there are
-4 types of house: row-val, col-val, sqr-val, single value versions of 2d 
-houses, and row-col, all values in one i,j cell. Solver looks for inconsisties 
+4 types of house defined by intersections: row-val, col-val, sqr-val (single value versions of 2d square
+houses), and row-col (all values in one i,j cell). Solver looks for inconsisties 
 which allow Trues to be set to Falses where they cannot be in solution.
 
 h is id of house in Puzzle.houseMask[h] (complete list of houses)
 hindx refers to index of h in incomplete list i.e. self.unsolvedHouses[hindx]
 
 all internals (ijksh) are zero indexed,
-outputs (row, column, value, square, house) are 1-indexed
+outputs (row, column, value, square, house) are 1 indexed
 exception is error messages which refer to zero indexed h
 
 all this would work for hexidecimal and 4by4 sudoku
@@ -54,6 +54,38 @@ New Plan:
     
     Pattern spotting better for fish etc. so implement later after SSI working.
     Do some single-solution puzzles still require uniqueness to solve?
+
+Plan 20240312:
+    I like the idea of only singles and an inconsistency finder.
+    Inconsistencies have a depth and an order. 
+    Depth is number of levels of singles which needed to be solved before inconsistency is apparent
+    E.g. intersection is depth 1 - supposing a cell disallowed by an intersection will remove 
+    all possiblities from a house straight away. A double has a depth of two, as
+    a disallowed cells is supposed, two possibilities are removed leaving what looks like
+    two singles but solving one of them will remove the other leaving a house with no possibilities
+    Order is how many suppositions need to be made to reveal the inconsistency.
+    Both above are order 1. A triple is order two, as if a disallowed cell is supposed,
+    it leaves three houses with only two possibilites and no way to fit the into
+    all three. One could suppose each of the possibilities and find both to lead to 
+    inconsistencies in order to show the first supposed cell is disallowed, but this
+    gets very complicated very quickly. 
+    So much so it may be better to do pattern matching instead - unless there
+    was an easier way to see higher order inconsistencies. (Do they all simplify into <n possibilities in n parallel houses?)
+    I have choice: pattern matching, or better inconsistency spotting.
+    Tempted to go with pattern matching - easier to name what I've found, and
+    won't get too complex if only iterating over unsolved houses.
+    Then do think of better inconsistencey spotting too - the ultimate method is 
+    Suppose, Solve, Inconsistency.
+
+Plan 20240326:
+    Pattern matching in full swing. See notes on solve_tuples, but in short
+    a non-finned fish solver can be used by SSI to solve finned fish only
+    looking for simplest inconsistencies (no possibilities in one house), so 
+    doing tuples and non-finned fish possibly in same method.
+    Due to flexibility SSI is good for other single digit patterns, which may all be 
+    chains, and since easiest to see single disgits and low-digit patterns,
+    writing an SSI that starts on one digit, then tries two, etc...
+
 """
 
 import numpy as np
@@ -99,6 +131,7 @@ class Puzzle:
     assert len(houseMask)==4*81
     # houseMask contains all houses
     # (each row, each col and each sqr) for each val, then each (i,j) cell
+    
     def cellHouses(k,i,j):
         """Returns flat indices of houses that cell kij is member of,
         for indexing houseMask
@@ -160,9 +193,10 @@ class Puzzle:
                     k = board[i,j]-1
                     fourhs = Puzzle.cellHouses(k,i,j)
                     for h in fourhs:
-                        if np.count_nonzero(unsolvedHouses==h)!=1:
-                            # Something wrong, likely invalid board entered
-                            raise ValueError(f'Likely error in entered board, h={h}: {Puzzle.h2str(h)}')
+                        # if np.count_nonzero(unsolvedHouses==h)!=1:
+                        #     # 20240318 unsure what is expected to trigger this - why can't I use cellHousesMask
+                        #     # Something wrong, likely invalid board entered
+                        #     raise ValueError(f'Likely error in entered board, h={h}: {Puzzle.h2str(h)}')
                         poss[Puzzle.houseMask[h]] = False
                         unsolvedHouses = np.delete(unsolvedHouses, unsolvedHouses==h)
                     poss[k,i,j] = True
@@ -280,7 +314,7 @@ class Puzzle:
             board[i,:] = [int(n) for n in input(f"Enter {('1st' if i==0 else ('2nd' if i==1 else ('3rd' if i==2 else f'{i+1}th')))} line: ")]
         return cls(board)
     
-    def checkPoss(self):
+    def checkPoss(self):#unsure what this is for
         for h in range(81*4):
             if np.count_nonzero(self.poss[Puzzle.houseMask[h]])<1:
                 raise ValueError(f'h={h} ({Puzzle.h2str(h)}) has <1 possible value!')
@@ -312,25 +346,29 @@ class Puzzle:
         
         output board
         
-        subfunctions return 1 if it progress made so should try simpler technique again, 
-        -1 if no progress made so try more complex technique,
-        and 0 if board solved so can exit!
+        subfunctions return -1 if it progress made so should try simpler technique again, 
+        +1 if no progress made so try more complex technique,
         
         sort print statements
         """
-        return self.solve_singles(step)
+        # stage = 1 # 0 is solves, 1 means try singles, 2 means try intersection etc
+        # for sweep in range(81 if not step else 1):
+        #     if stage==0:
+        #         print('Solved!')
+        #         break
+                
+        #     self.solve_intersection()
         
-        # c2f = [self.solve_singles, self.solve_intersection] # which f to use at each complexity level
-        # c = 0 # complexity level
-        # for sweep in range(100):# could calculate maximum possible number of sweeps based on 81 max numbers to fill, some number max intersections etc
-        #     out = c2f[c]()
-        #     c -= out
-        #     if out==0:
-        #         print('Sudoku solved!')
-        #         return self.board
-        #     elif c==len(c2f):
-        #         print('Solver out of ideas - you\'re on your own from here!')
-        #         return self.board
+        c2f = [self.solve_singles, self.solve_intersection] # which f to use at each complexity level
+        c = 0 # complexity level
+        for sweep in range(100):# could calculate maximum possible number of sweeps based on 81 max numbers to fill, some number max intersections etc
+            c += c2f[c]()
+            if c==-1:
+                print('Sudoku solved!')
+                return self.board
+            elif c==len(c2f):
+                print('Solver out of ideas - you\'re on your own from here!')
+                return self.board
             
     
     def solveCell(self, k, i, j, depthToGo=0):
@@ -341,26 +379,29 @@ class Puzzle:
         Could add to so checks if solving cell creates more singles to solve
         
         need to put print staements here
+        
+        20240318 I think check() and depthToGo may have been for SSI, but now thing this is better doing 
+        each with solve_singles, so it can print each one with a message.
         """
         self.board[i,j]=k+1
         mask = Puzzle.cellHousesMask(k,i,j)
         self.poss[mask] = False
-        self.poss[k,i,j] = True
-        self.check()
-        if depthToGo>=1:
-            linkedCells = np.argwhere(self.poss&mask) 
-            for n in range(linkedCells.shape[0]):
-                self.solveCell(*linkedCells[n,:], depthToGo=depthToGo-1)    
+        # self.poss[k,i,j] = True # unnecessary as cellHousesMask doesn't include kij
+        # self.check()
+        # if depthToGo>=1:
+        #     linkedCells = np.argwhere(self.poss&mask) 
+        #     for n in range(linkedCells.shape[0]):
+        #         self.solveCell(*linkedCells[n,:], depthToGo=depthToGo-1)    
         
         fourhs = Puzzle.cellHouses(k,i,j)
         for h in fourhs:
-            self.unsolvedHouses = np.delete(self.unsolvedHouses, self.unsolvedHouses==h)#is unsolvedHouses necessary in new system?
+            self.unsolvedHouses = np.delete(self.unsolvedHouses, self.unsolvedHouses==h)
         
         
-    def check(order=1):
-        """checks for existence of n parallel houses with <n shared houses
-        to put poss in"""
-        pass
+    # def check(order=1):
+    #     """checks for existence of n parallel houses with <n shared houses
+    #     to put poss in"""#unsure what this is for, only used in solveCell
+    #     pass
     
     def solve_singles(self, step=False):
         for sweep in range(81 if not step else 1):
@@ -369,7 +410,8 @@ class Puzzle:
             for h in self.unsolvedHouses:
                 #note: unsolvedHouses updated as loop occurs, meaning it 
                 # doesn't try to solve houses it has already solved earlier in loop
-                justHouse = self.poss&Puzzle.houseMask[h] # so keeps 9,9,9 shape
+                justHouse = self.poss&Puzzle.houseMask[h]
+                # using & rather than indexing so keeps 9,9,9 shape
                 if np.count_nonzero(justHouse)==1:
                     #single 
                     k,i,j = np.argwhere(justHouse)[0]
@@ -386,35 +428,36 @@ class Puzzle:
             
             if len(self.unsolvedHouses)==0:
                 #solved!
-                return 0
+                return -1
             elif h==self.unsolvedHouses[-1]:
                 print('No more singles, now searching for an intersection.')
-                return -1
+                return 1
         
-    def SSI():
-        """
-        copy puzzle, suppose cell, solve to some depth then look for inconsistencies 
-        of some order. Reapeat, increasing depth and order.
-        solveCell could do breadth-first and trace chain automatically.
-        intersections are found by depth 0 order 1
-        X-wings (naked and hidden tuples) found by depth 0 order 2, or depth 1 order 1
-        n-fish (n-tuples) including fins found by depth 0 order n-1
-        All non-fish examples I've seen can be solved by order 1, any depth
-        If all else fails, can do hogh deptha and high order
-        Structure: could depth limit, or could just chek inconsistencies when 
-        stops finding singles - danger is this could find complicated chains before
-        shorter more obvious ones. Other danger is trying every poss at depth 1,
-        then depth2, then depth 3, .. recalculating every time.
-        It is possible that there's always a low-depth chain to find, alternatively 
-        could do depth first, log all chains, and print and use the lowest depth one!
-        """
-        pass
+    # def SSI():
+    #     """
+    #     copy puzzle, suppose cell, solve to some depth then look for inconsistencies 
+    #     of some order. Reapeat, increasing depth and order.
+    #     solveCell could do breadth-first and trace chain automatically.
+    #     intersections are found by depth 0 order 1
+    #     X-wings (naked and hidden tuples) found by depth 0 order 2, or depth 1 order 1
+    #     n-fish (n-tuples) including fins found by depth 0 order n-1
+    #     All non-fish examples I've seen can be solved by order 1, any depth
+    #     If all else fails, can do hogh deptha and high order
+    #     Structure: could depth limit, or could just chek inconsistencies when 
+    #     stops finding singles - danger is this could find complicated chains before
+    #     shorter more obvious ones. Other danger is trying every poss at depth 1,
+    #     then depth2, then depth 3, .. recalculating every time.
+    #     It is possible that there's always a low-depth chain to find, alternatively 
+    #     could do depth first, log all chains, and print and use the lowest depth one!
+    #     """
+    #     pass
     
     def solve_intersection(self, step=False):
         """
         Current bug: finds an intersection, eturns to singles, doen't find any
         returns to intersections finds same intersection, repeat
-        May be replaceable by SSI"""
+        Seems solved?
+        """
         # for sweep in range(81 if not step else 1):
             #may want to go back to singles every time intersection found - easier for user
             
@@ -428,9 +471,10 @@ class Puzzle:
             
             # below find that if intersection exists, finds otherh
             otherh = -1
-            thirds = truth_coords//3 # 000111222
+            thirds = truth_coords//3 # gets value in 000111222
             if np.all(thirds==thirds[0]):
                 #all equal, therefore intersection 
+                #this covers row-sqr, col-sqr and sqr-row BUT NOT sqr-col
                 if (h-27*(h//27))//9==0:
                     #row
                     i = h - 27*(h//27)
@@ -451,29 +495,118 @@ class Puzzle:
             #sqr-col
             altthirds = truth_coords%3 # 012012012
             if np.all(altthirds==altthirds[0])and((h-27*(h//27))//9==2):
-                #all equal and h is square therefore sqr-col intersection
+                #all thirds equal and h is square therefore sqr-col intersection
                 s = h - 27*(h//27) - 18
                 j = 3*(s%3) + altthirds[0]
                 otherh = 27*(h//27) + 9 + j
             
             if otherh!=-1:
+                # print(h)
+                # print(otherh)
                 #intersection found
                 #h is house with all truths in one other house, otherh
                 # first checks if anything new gained
                 mask = Puzzle.houseMask[otherh]&np.logical_not(Puzzle.houseMask[h])
+                # print(mask)
+                # print(mask.shape)
                 if np.count_nonzero(self.poss[mask])==0:
                     #nothing to be gained, possibly found this intersection before
                     continue
                 # now removing other possibilities from otherh
-                print(f'Intersection found: {Puzzle.h2str(h)} to house {Puzzle.h2str(otherh)} ({h}-{otherh}).')
+                print(f'Intersection found: {Puzzle.h2str(h)} to {Puzzle.h2str(otherh)} (h1={h}, h2={otherh}).')
                 self.poss[mask] = False
-                return 1
+                return -1
         
         if h == self.unsolvedHouses[self.unsolvedHouses<81*3][-1]:
             #no intersection found
             print('No intersections found.')
-            return -1
+            return 1
         
+    #solve fish? solve loops? solve patterns? SSI?
+    # How about an SSI that solves all singles possible, then searches for 
+    # incosistencies by looking for n parallel houses with <n possibilities?
+    # classifying them may be a pain but it could work
+    
+    def solve_tuples(self, step=False):
+        """
+        Also solves unfinned fish, as they are
+        tuples along a different axis - for a naked tuple the base houses are
+        along the value axis, for a hidden tuple the cover houses are along the
+        value axis.
+        If I include squares as potential houses for base/cover sets, this includes the 
+        "complex" unfinned true fish (Franken and mutant).
+        Then SSI can use this method to solve finned and sashimi fish.
+        
+        Plan
+        start on n=2, loop over all combinations of n base houses and n cover sets.
+        When cells can be elimated, do them all then exit to simpler method.
+        Increment n and repeat.
+        
+        For fish what combos? any number of rows can be combined with the same number of
+        columns with either being base or cover. Actully what is base and what 
+        is cover just depends on the poss, so ignore for now, just thing of two sets
+        of size n of houses, whoch could be either base or cover. 
+        It looks like (from Hodoku Complex Fish page) that any combination is
+        allowed, but overlapping ones (eg row 1 and square 1 as base set) seems
+        to always produce fins, and therefore don't need to be considered here,
+        as SSI doesn't need to spot wings, it supposes a cell that happens to
+        be a wing. I think this is true, because if base sets overlap and there
+        aren't fins, what you have is an intersection and can eliminate with that?
+        I think that works for n=2, but what about higher? May be safer and easier 
+        to iterate over all tuples of n single value houses, even if I think some 
+        pairs won't work.
+        
+        Thoughts
+        Start on tuples, or fish? probably tuples
+        What is max n? not 9 as eliminations have to be outside houses considered.
+        Not 8 as remainder is already a single. Is 4 max, as for 
+        n=5 the complement would be found by n<=4? Unsure if this works 
+        """
+        
+        for n in range(n,5):
+            #setting max n to 4 for now 
+            
+            # tuples first - h in range 3*81 - 4*81-1
+            
+            
+            
+        
+    # def solve_complex_fish(self, step=False):
+    #     """
+    #     May also include simple fish, if works with plan chosen. 
+    #     May include everytihng except row-col fish.
+    #     May not even do just fish, may do all single digit patterns like 
+    #     skyscraper
+        
+    #     See Hodoku.
+    #     Complex fish include 
+    #     Currently solves...
+        
+    #     Plan
+    #     May be able to assume no basic fish.
+    #     Loop through all possible sets of base and cover houses
+    #     Start on n=2, so all sets of 2 houses with 
+    #     """
+        
+    """
+    Think about both what each method can solve, and what it helps SSI solve
+    eg basic fish method can be used by SSI to solve finned fish (and sashimi, I think)
+    since basic fish would include squares, currently thinking I should do 
+    seperately to tuples - actually maybe not! Why not? Because I may do fish 
+    with other single digit patterns? Actually, best way of doing general 
+    single digit patterns may be SSI but only on one value, so I would alsready
+    need a fish solver. AND, if I'm going to do that I should just write a general SSI
+    that starts only considering one value, then only two values, then only three
+    etc.
+    
+    Note Hodoku's basic fish is row-col fish, and complex fish is just allowing blocks
+    then a single digit pattern. So What I'm doing is a method for unfinned fish,
+    which SSI can use to get finned fish.
+    
+    So plan is do tuples and unfinned fish, maybe in one method, 
+    """
+    
+    
     
     
     
