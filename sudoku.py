@@ -147,6 +147,11 @@ class Puzzle:
             mask = np.logical_or(mask, Puzzle.houseMask[h])
         mask[k,i,j] = False
         return mask
+    
+    # def linkedhs(h):
+    #     if h<81:
+    #         #row
+            
         
         
     # def h2ijk(h):
@@ -349,7 +354,7 @@ class Puzzle:
         subfunctions return -1 if it progress made so should try simpler technique again, 
         +1 if no progress made so try more complex technique,
         
-        sort print statements
+        sort print statements and step function
         """
         # stage = 1 # 0 is solves, 1 means try singles, 2 means try intersection etc
         # for sweep in range(81 if not step else 1):
@@ -359,10 +364,13 @@ class Puzzle:
                 
         #     self.solve_intersection()
         
-        c2f = [self.solve_singles, self.solve_intersection] # which f to use at each complexity level
+        c2f = [self.solve_singles,
+               self.solve_intersection,
+               self.tuple_fish_incrementor]
+        # which f to use at each complexity level
         c = 0 # complexity level
         for sweep in range(100):# could calculate maximum possible number of sweeps based on 81 max numbers to fill, some number max intersections etc
-            c += c2f[c]()
+            c += c2f[c](step)
             if c==-1:
                 print('Sudoku solved!')
                 return self.board
@@ -371,7 +379,7 @@ class Puzzle:
                 return self.board
             
     
-    def solveCell(self, k, i, j, depthToGo=0):
+    def solveCell(self, k, i, j):#, depthToGo=0):
         """
         for removing possibilities from cells that share house when cell ijk 
         is solution and updating board and unsolvedHouses
@@ -380,7 +388,7 @@ class Puzzle:
         
         need to put print staements here
         
-        20240318 I think check() and depthToGo may have been for SSI, but now thing this is better doing 
+        20240318 I think check() and depthToGo may have been for SSI, but now think this is better doing 
         each with solve_singles, so it can print each one with a message.
         """
         self.board[i,j]=k+1
@@ -405,7 +413,8 @@ class Puzzle:
     
     def solve_singles(self, step=False):
         for sweep in range(81 if not step else 1):
-            #81 as each sweep should find at least one cell
+            #81 as each sweep should find at least one cell,
+            # or none in which case it exits
             # 1 for just one step
             for h in self.unsolvedHouses:
                 #note: unsolvedHouses updated as loop occurs, meaning it 
@@ -423,7 +432,7 @@ class Puzzle:
                                       'column hidden',
                                       'square hidden'][t//9]
                     print(f'Found {solvetype} single value {k+1} at row {i+1}, column {j+1}')
-                    self.solveCell(k,i,j, depthToGo=9**3 if not step else 1)
+                    self.solveCell(k,i,j)#, depthToGo=9**3 if not step else 1)
                     break
             
             if len(self.unsolvedHouses)==0:
@@ -527,7 +536,7 @@ class Puzzle:
     # incosistencies by looking for n parallel houses with <n possibilities?
     # classifying them may be a pain but it could work
     
-    def solve_tuples(self, step=False):
+    def tuple_fish_incrementor(self, step=False):
         """
         Also solves unfinned fish, as they are
         tuples along a different axis - for a naked tuple the base houses are
@@ -561,15 +570,34 @@ class Puzzle:
         What is max n? not 9 as eliminations have to be outside houses considered.
         Not 8 as remainder is already a single. Is 4 max, as for 
         n=5 the complement would be found by n<=4? Unsure if this works 
+        
+        This actually just calls seperate solver methods, since solving fish and tuples 
+        differently, this just coordinates the lincrease in n 
+        """
+        maxn = 4
+        for n in range(1,maxn+1):
+            #setting max n to 4 for now - should probably set to n=8 (so )
+            
+            self.solve_tuples(n)
+            # self.solve_fish(n)
+            
+    def solve_tuples(self, n):
+        """
+        plan - this may work for fish too - iterate over sets of n unsolved
+        linked houses (i.e. ijs with ijs in same row, col or square (naked tuples),
+        rows/cols/squares at diferent values but same row/col/square (hidden tuples),
+        and rows/cols/squares at same value (fish))
+        Find poss that correspond, this is the pattern, so look for cells poss to eliminate
+        
+        write function that inputs h and returns hs of linked houses?
+        
+        Can you get coplex tuples? By combining squares and rows etc? No - 
+        without fins, if the base sets could be a square and a row, due to intersection
+        the square could be swapped for the corresponding value row and vice versa.
+        Additioanlly, useful finss don't exist, as due to lack of squares into board,
+        no cover candidate can see 'fins' 
         """
         
-        for n in range(n,5):
-            #setting max n to 4 for now 
-            
-            # tuples first - h in range 3*81 - 4*81-1
-            
-            
-            
         
     # def solve_complex_fish(self, step=False):
     #     """

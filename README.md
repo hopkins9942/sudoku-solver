@@ -1,3 +1,5 @@
+NEEDS REWRITE
+
 This a relatively simple sudoku solver I have written, largely for myself, but it may be of use to you too!
 
 My main aim is to have it solve sudoku puzzles as a human would, just faster and better at keeping track of possibilities, and tell you exactly what it has done so you can follow along and learn.
